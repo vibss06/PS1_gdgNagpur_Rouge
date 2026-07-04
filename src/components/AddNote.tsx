@@ -1016,18 +1016,20 @@ export const AddNote: React.FC<AddNoteProps> = ({ onSuccess, onCancel, language 
             </div>
           )}
 
-          {/* Emergency SOS Section */}
-          <div className="pt-4 border-t border-slate-100/80 space-y-3">
-            <p className="text-xs text-rose-500 font-bold tracking-wide uppercase">⚡ Maternal Emergency / Urgent Complication?</p>
-            <button
-              type="button"
-              onClick={handleSOS}
-              className="w-full py-4 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-2xl shadow-lg shadow-rose-600/20 active:scale-95 transition-all text-sm flex items-center justify-center gap-2 animate-bounce"
-            >
-              <AlertOctagon className="w-5 h-5" />
-              <span>{language === 'en' ? 'TRIGGER EMERGENCY SOS' : 'आपातकालीन एसओएस दबाएं'}</span>
-            </button>
-          </div>
+          {/* Emergency SOS Section - Only visible if patient requires urgent treatment */}
+          {extractedData?.danger_flag && (
+            <div className="pt-4 border-t border-slate-100/80 space-y-3 animate-fadeIn">
+              <p className="text-xs text-rose-500 font-bold tracking-wide uppercase">⚡ Maternal Emergency / Urgent Complication?</p>
+              <button
+                type="button"
+                onClick={handleSOS}
+                className="w-full py-4 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-2xl shadow-lg shadow-rose-600/20 active:scale-95 transition-all text-sm flex items-center justify-center gap-2 animate-bounce"
+              >
+                <AlertOctagon className="w-5 h-5" />
+                <span>{language === 'en' ? 'TRIGGER EMERGENCY SOS' : 'आपातकालीन एसओएस दबाएं'}</span>
+              </button>
+            </div>
+          )}
 
           {/* Manual Done Button */}
           <div className="pt-2">
