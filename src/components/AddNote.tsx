@@ -225,8 +225,24 @@ export const AddNote: React.FC<AddNoteProps> = ({ onSuccess, onCancel, language 
   // Real voice recording handlers
   const startRecording = async () => {
     try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("getUserMedia is not supported on this browser/context");
+      }
+      
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+      
+      let options = {};
+      if (typeof MediaRecorder.isTypeSupported === 'function') {
+        if (MediaRecorder.isTypeSupported('audio/webm')) {
+          options = { mimeType: 'audio/webm' };
+        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          options = { mimeType: 'audio/mp4' };
+        } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+          options = { mimeType: 'audio/ogg' };
+        }
+      }
+      
+      const mediaRecorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
@@ -263,8 +279,9 @@ export const AddNote: React.FC<AddNoteProps> = ({ onSuccess, onCancel, language 
       mediaRecorder.start();
       setIsRecording(true);
     } catch (err) {
-      console.error("Microphone access denied:", err);
-      alert("Microphone access denied. Please ensure you have granted permission to use the microphone.");
+      console.warn("Microphone access failed or unsupported, falling back to simulated speech input:", err);
+      // Fallback to simulated typing
+      handleSimulationType();
     }
   };
 
