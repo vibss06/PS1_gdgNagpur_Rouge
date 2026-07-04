@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, MapPin, ChevronDown, ChevronUp, Calendar, HeartPulse, RefreshCw, Map } from 'lucide-react';
+import { Plus, MapPin, ChevronDown, ChevronUp, Calendar, HeartPulse, RefreshCw, Map, Check } from 'lucide-react';
 import { supabase } from '../utils/supabaseClient';
 import { calculateRiskScore } from '../utils/rules';
 import { TRANSLATIONS } from '../utils/translations';
 import type { Language } from '../utils/translations';
-import { getStoredPatients, getStoredVisits } from '../utils/mockData';
+import { getStoredPatients, getStoredVisits, saveStoredVisit } from '../utils/mockData';
 import type { Patient, Visit, RiskResult } from '../types';
 
 interface HomeProps {
@@ -107,6 +107,52 @@ export const Home: React.FC<HomeProps> = ({ onAddNoteClick, language, onLocatePa
     return new Date().toLocaleDateString('en-IN', options);
   };
 
+  const handleMarkVisited = async (patient: Patient) => {
+    const days = patient.condition_type === 'pregnancy' ? 28 : 30;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const nextDate = new Date();
+    nextDate.setDate(nextDate.getDate() + days);
+    const nextDueDateStr = nextDate.toISOString().split('T')[0];
+
+    const newVisit: Visit = {
+      id: 'v_' + Date.now(),
+      patient_id: patient.id,
+      visit_date: todayStr,
+      visit_type: patient.condition_type === 'pregnancy' ? 'ANC checkup' : 
+                  patient.condition_type === 'ncd_refill' ? 'NCD refill' : 'Immunization checkup',
+      notes: "Routine checkup completed. Marked as visited by ASHA.",
+      extracted_fields: {
+        condition: patient.condition_type
+      },
+      confidence: 1.0,
+      next_due_date: nextDueDateStr,
+      danger_flag: false
+    };
+
+    // Save locally
+    saveStoredVisit(newVisit);
+
+    // Try to sync with Supabase
+    try {
+      await supabase
+        .from('visits')
+        .insert([{
+          patient_id: patient.id,
+          visit_date: todayStr,
+          visit_type: newVisit.visit_type,
+          notes: newVisit.notes,
+          next_due_date: nextDueDateStr,
+          danger_flag: false,
+          confidence: 1.0
+        }]);
+    } catch (e) {
+      console.log("Supabase quick-visit sync failed, saved locally:", e);
+    }
+
+    // Refresh dashboard list
+    fetchDashboardData();
+  };
+
   const toggleExpand = (patientId: string) => {
     setExpandedPatientId(prev => (prev === patientId ? null : patientId));
   };
@@ -184,9 +230,9 @@ export const Home: React.FC<HomeProps> = ({ onAddNoteClick, language, onLocatePa
             <div key={i} className="h-28 bg-slate-100 animate-pulse rounded-3xl" />
           ))}
         </div>
-      ) : patientRisks.length > 0 ? (
+      ) : patientRisks.filter(r => r.daysOverdue >= 0).length > 0 ? (
         <div className="space-y-4">
-          {patientRisks.map(({ patient, latestVisit, risk, daysOverdue }) => {
+          {patientRisks.filter(r => r.daysOverdue >= 0).map(({ patient, latestVisit, risk, daysOverdue }) => {
             const isExpanded = expandedPatientId === patient.id;
             const badgeStyles = getRiskBadgeStyles(risk.level);
             
@@ -259,8 +305,8 @@ export const Home: React.FC<HomeProps> = ({ onAddNoteClick, language, onLocatePa
                       )}
                     </div>
 
-                    {/* Go to Address Button */}
-                    <div className="pt-3 border-t border-slate-100 flex justify-end">
+                    {/* Go to Address & Mark Visited Buttons */}
+                    <div className="pt-3 border-t border-slate-100 flex gap-2 justify-end">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -268,10 +314,21 @@ export const Home: React.FC<HomeProps> = ({ onAddNoteClick, language, onLocatePa
                             onLocatePatient(patient.locality);
                           }
                         }}
-                        className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100/80 text-emerald-800 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors shadow-sm"
+                        className="px-3.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors border border-slate-200/40 shadow-sm"
                       >
-                        <Map className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>{language === 'en' ? 'Go to Address (Locate on Map)' : 'पता पर जाएं (नक्शे पर देखें)'}</span>
+                        <Map className="w-3.5 h-3.5 text-slate-400" />
+                        <span>{language === 'en' ? 'Go to Address' : 'पता पर जाएं'}</span>
+                      </button>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMarkVisited(patient);
+                        }}
+                        className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors shadow-sm"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>{language === 'en' ? 'Mark Visited' : 'जांच पूर्ण'}</span>
                       </button>
                     </div>
                   </div>
