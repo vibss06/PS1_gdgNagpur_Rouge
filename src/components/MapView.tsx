@@ -8,6 +8,8 @@ import type { Patient } from '../types';
 
 interface MapViewProps {
   language: Language;
+  highlightedLocality?: string | null;
+  onLocalityClear?: () => void;
 }
 
 interface LocalityNode {
@@ -25,7 +27,7 @@ const LOCALITIES: LocalityNode[] = [
   { name: "Hanuman Chowk", x: 80, y: 70, color: "bg-rose-500" },
 ];
 
-export const MapView: React.FC<MapViewProps> = ({ language }) => {
+export const MapView: React.FC<MapViewProps> = ({ language, highlightedLocality, onLocalityClear }) => {
   const t = TRANSLATIONS[language];
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedLocality, setSelectedLocality] = useState<string | null>(null);
@@ -34,6 +36,22 @@ export const MapView: React.FC<MapViewProps> = ({ language }) => {
   useEffect(() => {
     fetchPatients();
   }, []);
+
+  useEffect(() => {
+    if (highlightedLocality) {
+      // Find matching locality name case-insensitively
+      const match = LOCALITIES.find(l => 
+        l.name.toLowerCase() === highlightedLocality.toLowerCase() || 
+        highlightedLocality.toLowerCase().includes(l.name.toLowerCase()) ||
+        l.name.toLowerCase().includes(highlightedLocality.toLowerCase())
+      );
+      if (match) {
+        setSelectedLocality(match.name);
+      } else {
+        setSelectedLocality(highlightedLocality);
+      }
+    }
+  }, [highlightedLocality]);
 
   const fetchPatients = async () => {
     setLoading(true);
@@ -181,7 +199,10 @@ export const MapView: React.FC<MapViewProps> = ({ language }) => {
           </div>
           {selectedLocality && (
             <button
-              onClick={() => setSelectedLocality(null)}
+              onClick={() => {
+                setSelectedLocality(null);
+                if (onLocalityClear) onLocalityClear();
+              }}
               className="text-xs font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full transition-colors flex items-center gap-1"
             >
               <ArrowLeft className="w-3.5 h-3.5" />

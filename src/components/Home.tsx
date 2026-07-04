@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, MapPin, ChevronDown, ChevronUp, Calendar, HeartPulse, RefreshCw } from 'lucide-react';
+import { Plus, MapPin, ChevronDown, ChevronUp, Calendar, HeartPulse, RefreshCw, Map } from 'lucide-react';
 import { supabase } from '../utils/supabaseClient';
 import { calculateRiskScore } from '../utils/rules';
 import { TRANSLATIONS } from '../utils/translations';
@@ -10,6 +10,7 @@ import type { Patient, Visit, RiskResult } from '../types';
 interface HomeProps {
   onAddNoteClick: () => void;
   language: Language;
+  onLocatePatient?: (locality: string) => void;
 }
 
 interface PatientRiskInfo {
@@ -19,7 +20,7 @@ interface PatientRiskInfo {
   risk: RiskResult;
 }
 
-export const Home: React.FC<HomeProps> = ({ onAddNoteClick, language }) => {
+export const Home: React.FC<HomeProps> = ({ onAddNoteClick, language, onLocatePatient }) => {
   const t = TRANSLATIONS[language];
   const [patientRisks, setPatientRisks] = useState<PatientRiskInfo[]>([]);
   const [loading, setLoading] = useState(false);
@@ -246,7 +247,6 @@ export const Home: React.FC<HomeProps> = ({ onAddNoteClick, language }) => {
                         ))}
                       </ul>
                     </div>
-
                     {/* Quick Stats */}
                     <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-xs">
                       <span className="text-slate-400 font-medium">
@@ -257,6 +257,22 @@ export const Home: React.FC<HomeProps> = ({ onAddNoteClick, language }) => {
                           Last Checked: <span className="font-semibold text-slate-600">{latestVisit.visit_date}</span>
                         </span>
                       )}
+                    </div>
+
+                    {/* Go to Address Button */}
+                    <div className="pt-3 border-t border-slate-100 flex justify-end">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onLocatePatient) {
+                            onLocatePatient(patient.locality);
+                          }
+                        }}
+                        className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100/80 text-emerald-800 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors shadow-sm"
+                      >
+                        <Map className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>{language === 'en' ? 'Go to Address (Locate on Map)' : 'पता पर जाएं (नक्शे पर देखें)'}</span>
+                      </button>
                     </div>
                   </div>
                 )}

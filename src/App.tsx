@@ -18,6 +18,7 @@ function App() {
   const [language, setLanguage] = useState<Language>(() => {
     return (localStorage.getItem('asha_language') as Language) || 'en';
   });
+  const [highlightedLocality, setHighlightedLocality] = useState<string | null>(null);
 
   const toggleLanguage = () => {
     const nextLang = language === 'en' ? 'hi' : 'en';
@@ -76,13 +77,24 @@ function App() {
         {/* Main Content Area */}
         <main className="flex-1 overflow-y-auto">
           {activeTab === 'today' && (
-            <Home onAddNoteClick={() => setActiveTab('add_note')} language={language} />
+            <Home 
+              onAddNoteClick={() => setActiveTab('add_note')} 
+              language={language} 
+              onLocatePatient={(locality) => {
+                setHighlightedLocality(locality);
+                setActiveTab('map');
+              }}
+            />
           )}
           {activeTab === 'patients' && (
             <PatientList language={language} />
           )}
           {activeTab === 'map' && (
-            <MapView language={language} />
+            <MapView 
+              language={language} 
+              highlightedLocality={highlightedLocality}
+              onLocalityClear={() => setHighlightedLocality(null)}
+            />
           )}
           {activeTab === 'add_note' && (
             <AddNote 
