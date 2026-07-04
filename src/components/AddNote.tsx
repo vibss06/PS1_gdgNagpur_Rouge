@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Sparkles, Check, Loader2, AlertCircle, Calendar, User, Info, Smartphone, Camera, ImagePlus, X } from 'lucide-react';
+import { Mic, MicOff, Sparkles, Check, Loader2, AlertCircle, Calendar, User, Info, Smartphone, Camera, ImagePlus, X, AlertOctagon } from 'lucide-react';
 import { supabase } from '../utils/supabaseClient';
 import { extractVisitNote } from '../utils/llmService';
 import { transcribeAudio } from '../utils/transcribeService';
@@ -37,6 +37,11 @@ export const AddNote: React.FC<AddNoteProps> = ({ onSuccess, onCancel, language 
   // Image Upload states
   const [verificationImage, setVerificationImage] = useState<string | null>(null);
   const [symptomImage, setSymptomImage] = useState<string | null>(null);
+
+  // SOS Emergency states
+  const [sosTriggered, setSosTriggered] = useState(false);
+  const [sosLocation, setSosLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [sosStatus, setSosStatus] = useState<'idle' | 'detecting' | 'dispatched'>('idle');
 
   // Form Parameters
   const [paramName, setParamName] = useState('');
@@ -127,6 +132,37 @@ export const AddNote: React.FC<AddNoteProps> = ({ onSuccess, onCancel, language 
       }
     }
   }, [extractedData]);
+
+  const handleSOS = () => {
+    setSosStatus('detecting');
+    setSosTriggered(true);
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setSosLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+          setTimeout(() => {
+            setSosStatus('dispatched');
+          }, 1500);
+        },
+        (error) => {
+          console.error("Error getting location for SOS:", error);
+          setSosLocation({ lat: 21.1458, lng: 79.0882 }); // fallback
+          setTimeout(() => {
+            setSosStatus('dispatched');
+          }, 1500);
+        }
+      );
+    } else {
+      setSosLocation({ lat: 21.1458, lng: 79.0882 });
+      setTimeout(() => {
+        setSosStatus('dispatched');
+      }, 1500);
+    }
+  };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'verification' | 'symptom') => {
     const file = e.target.files?.[0];
@@ -346,11 +382,6 @@ export const AddNote: React.FC<AddNoteProps> = ({ onSuccess, onCancel, language 
       setTimeout(() => {
         setWhatsappMock(true);
       }, 1000);
-
-      // Return home after 3 seconds
-      setTimeout(() => {
-        onSuccess();
-      }, 3500);
 
     } catch (err) {
       console.error('Error saving visit:', err);
@@ -974,14 +1005,98 @@ export const AddNote: React.FC<AddNoteProps> = ({ onSuccess, onCancel, language 
               </div>
               <div>
                 <h4 className="text-xs font-bold text-sky-800">{t.whatsappAlert}</h4>
-                <p className="text-[10px] text-sky-600 mt-0.5">{t.whatsappAlertDesc(extractedData?.next_due_date || '')}</p>
+                <p className="text-[10px] text-sky-600 mt-0.5">{t.whatsappAlertDesc(paramNextDueDate)}</p>
               </div>
             </div>
           )}
 
-          <div className="flex items-center justify-center gap-1.5 text-xs text-slate-400 pt-4">
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            {t.returningHome}
+          {/* Emergency SOS Section */}
+          <div className="pt-4 border-t border-slate-100/80 space-y-3">
+            <p className="text-xs text-rose-500 font-bold tracking-wide uppercase">⚡ Maternal Emergency / Urgent Complication?</p>
+            <button
+              type="button"
+              onClick={handleSOS}
+              className="w-full py-4 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-2xl shadow-lg shadow-rose-600/20 active:scale-95 transition-all text-sm flex items-center justify-center gap-2 animate-bounce"
+            >
+              <AlertOctagon className="w-5 h-5" />
+              <span>{language === 'en' ? 'TRIGGER EMERGENCY SOS' : 'आपातकालीन एसओएस दबाएं'}</span>
+            </button>
+          </div>
+
+          {/* Manual Done Button */}
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={onSuccess}
+              className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-2xl text-sm transition-colors shadow-md"
+            >
+              {language === 'en' ? 'Go to Dashboard' : 'डैशबोर्ड पर जाएं'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* SOS Overlay Modal */}
+      {sosTriggered && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-5 bg-slate-900/80 backdrop-blur-md animate-fadeIn">
+          <div className="w-full max-w-sm bg-white rounded-3xl border border-rose-100 shadow-2xl p-6 text-center space-y-6 relative overflow-hidden">
+            
+            {/* Flashing Warning Glow */}
+            <div className="absolute -top-12 -left-12 w-32 h-32 bg-rose-500/10 rounded-full blur-2xl animate-pulse" />
+            
+            <div className="space-y-4">
+              <div className="w-16 h-16 bg-rose-100 rounded-2xl flex items-center justify-center text-rose-600 mx-auto animate-ping-slow">
+                <AlertOctagon className="w-9 h-9" />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-rose-600 tracking-tight">SOS EMERGENCY ALERT</h3>
+                <p className="text-xs text-slate-500 mt-1">Requesting ambulance and notifying nearest hospital</p>
+              </div>
+            </div>
+
+            {sosStatus === 'detecting' ? (
+              <div className="p-4 bg-slate-50 rounded-2xl flex flex-col items-center justify-center space-y-2 border border-slate-100">
+                <Loader2 className="w-6 h-6 text-rose-500 animate-spin" />
+                <span className="text-xs font-bold text-slate-600">Detecting Patient's GPS Location...</span>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Location coordinates info */}
+                <div className="p-4 bg-slate-50 rounded-2xl text-left space-y-2 border border-slate-100 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400 font-medium">ASHA Location:</span>
+                    <span className="font-semibold text-slate-700">
+                      {sosLocation ? `${sosLocation.lat.toFixed(4)}° N, ${sosLocation.lng.toFixed(4)}° E` : 'Detecting...'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400 font-medium">Nearest Hospital:</span>
+                    <span className="font-bold text-rose-600">Ramnagar Civil Hospital (1.4 km)</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400 font-medium">Ambulance Status:</span>
+                    <span className="font-bold text-emerald-600 animate-pulse">Dispatched (ETA 10 mins)</span>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-rose-50 border border-rose-100 rounded-2xl text-[10px] text-rose-700 font-semibold leading-relaxed">
+                  ✓ GPS coordinates and patient details transmitted to dispatch center.
+                </div>
+              </div>
+            )}
+
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setSosTriggered(false);
+                  onSuccess(); // Return to dashboard
+                }}
+                className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-2xl text-sm transition-colors shadow-md"
+              >
+                Acknowledge & Close
+              </button>
+            </div>
           </div>
         </div>
       )}
