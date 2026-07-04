@@ -38,6 +38,96 @@ export const AddNote: React.FC<AddNoteProps> = ({ onSuccess, onCancel, language 
   const [verificationImage, setVerificationImage] = useState<string | null>(null);
   const [symptomImage, setSymptomImage] = useState<string | null>(null);
 
+  // Form Parameters
+  const [paramName, setParamName] = useState('');
+  const [paramCondition, setParamCondition] = useState<'pregnancy' | 'ncd_refill' | 'immunization'>('pregnancy');
+  const [paramGestationWeeks, setParamGestationWeeks] = useState<number | ''>('');
+  const [paramVisitType, setParamVisitType] = useState('ANC checkup');
+  const [paramVisitDate, setParamVisitDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [paramNextDueDate, setParamNextDueDate] = useState('');
+
+  // Camera states
+  const [cameraActive, setCameraActive] = useState<'verification' | 'symptom' | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  // Sync next due date based on condition and visit date
+  useEffect(() => {
+    const days = paramCondition === 'pregnancy' ? 28 : 30;
+    const date = new Date(paramVisitDate);
+    date.setDate(date.getDate() + days);
+    setParamNextDueDate(date.toISOString().split('T')[0]);
+  }, [paramCondition, paramVisitDate]);
+
+  // Clean up camera on unmount
+  useEffect(() => {
+    return () => {
+      if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
+
+  const startCamera = async (type: 'verification' | 'symptom') => {
+    setCameraActive(type);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      }, 150);
+    } catch (err) {
+      console.error("Camera access failed:", err);
+      alert("Could not access camera. Please check permissions.");
+      setCameraActive(null);
+    }
+  };
+
+  const stopCamera = () => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+    }
+    setCameraActive(null);
+  };
+
+  const captureSnapshot = (type: 'verification' | 'symptom') => {
+    if (videoRef.current) {
+      const canvas = document.createElement('canvas');
+      canvas.width = videoRef.current.videoWidth || 640;
+      canvas.height = videoRef.current.videoHeight || 480;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg');
+        if (type === 'verification') {
+          setVerificationImage(dataUrl);
+        } else {
+          setSymptomImage(dataUrl);
+        }
+      }
+      stopCamera();
+    }
+  };
+
+  // Auto-populate states when AI extracts details
+  useEffect(() => {
+    if (extractedData) {
+      if (extractedData.name) setParamName(extractedData.name);
+      if (extractedData.visit_type) setParamCondition(extractedData.visit_type as any);
+      if (extractedData.weeks_pregnant) setParamGestationWeeks(extractedData.weeks_pregnant);
+      if (extractedData.visit_type === 'pregnancy') {
+        setParamVisitType('ANC checkup');
+      } else if (extractedData.visit_type === 'ncd_refill') {
+        setParamVisitType('NCD refill');
+      } else if (extractedData.visit_type === 'immunization') {
+        setParamVisitType('Immunization checkup');
+      }
+    }
+  }, [extractedData]);
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'verification' | 'symptom') => {
     const file = e.target.files?.[0];
     if (file) {
@@ -199,13 +289,10 @@ export const AddNote: React.FC<AddNoteProps> = ({ onSuccess, onCancel, language 
     try {
       let patientId = '';
       
-      // 1. Find if patient exists, otherwise create
-      const matchName = extractedData.name || 'Unknown Patient';
-      const existing = patients.find(p => 
-        p.name.toLowerCase().includes(matchName.toLowerCase()) || 
-        matchName.toLowerCase().includes(p.name.toLowerCase())
-      );
-
+      // 1. Match/Create Patient
+      const matchName = paramName.trim() || 'Unknown Patient';
+      const existing = patients.find(p => p.name.toLowerCase() === matchName.toLowerCase());
+      
       if (existing) {
         patientId = existing.id;
       } else {
@@ -216,7 +303,7 @@ export const AddNote: React.FC<AddNoteProps> = ({ onSuccess, onCancel, language 
             {
               name: matchName,
               locality: 'General Ward', // fallback
-              condition_type: extractedData.visit_type || 'pregnancy',
+              condition_type: paramCondition,
             }
           ])
           .select();
@@ -228,24 +315,24 @@ export const AddNote: React.FC<AddNoteProps> = ({ onSuccess, onCancel, language 
       }
 
       // 2. Insert visit
-      const today = new Date().toISOString().split('T')[0];
       const { error: visitError } = await supabase
         .from('visits')
         .insert([
           {
             patient_id: patientId,
-            visit_date: today,
-            visit_type: extractedData.visit_type,
+            visit_date: paramVisitDate,
+            visit_type: paramVisitType,
             notes: noteText,
             extracted_fields: {
-              weeks_pregnant: extractedData.weeks_pregnant,
-              condition: extractedData.condition,
+              weeks_pregnant: paramGestationWeeks || null,
+              gestation_weeks: paramGestationWeeks || null,
+              condition: paramCondition,
               verification_image: verificationImage,
               symptom_image: symptomImage,
             },
-            confidence: extractedData.confidence || 0.90,
-            next_due_date: extractedData.next_due_date,
-            danger_flag: extractedData.danger_flag || false,
+            confidence: extractedData?.confidence || 0.90,
+            next_due_date: paramNextDueDate,
+            danger_flag: extractedData?.danger_flag || false,
           }
         ]);
 
@@ -290,6 +377,88 @@ export const AddNote: React.FC<AddNoteProps> = ({ onSuccess, onCancel, language 
       {/* Main input card */}
       {!extractedData && !saveSuccess && (
         <div className="bg-white rounded-3xl p-5 border border-slate-100 shadow-soft space-y-4">
+          
+          {/* Parameters Panel */}
+          <div className="bg-emerald-50/40 border border-emerald-100/60 rounded-2xl p-4.5 space-y-4">
+            <span className="block text-xs font-bold text-emerald-800 uppercase tracking-wider">
+              {language === 'en' ? 'Structured Visit Parameters' : 'व्यवस्थित जांच विवरण'}
+            </span>
+            <div className="grid grid-cols-2 gap-3">
+              {/* Patient Name */}
+              <div className="space-y-1">
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t.patientName}</label>
+                <input
+                  type="text"
+                  value={paramName}
+                  onChange={(e) => setParamName(e.target.value)}
+                  placeholder="e.g. Sunita Devi"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              {/* Condition */}
+              <div className="space-y-1">
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t.condition}</label>
+                <select
+                  value={paramCondition}
+                  onChange={(e) => setParamCondition(e.target.value as any)}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="pregnancy">Pregnancy</option>
+                  <option value="ncd_refill">NCD Refill</option>
+                  <option value="immunization">Immunization</option>
+                </select>
+              </div>
+
+              {/* Gestation Weeks */}
+              {paramCondition === 'pregnancy' && (
+                <div className="space-y-1 animate-slideDown">
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Gestation (Weeks)</label>
+                  <input
+                    type="number"
+                    value={paramGestationWeeks}
+                    onChange={(e) => setParamGestationWeeks(e.target.value === '' ? '' : parseInt(e.target.value))}
+                    placeholder="e.g. 28"
+                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              )}
+
+              {/* Visit Type */}
+              <div className="space-y-1">
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t.paramVisitType}</label>
+                <input
+                  type="text"
+                  value={paramVisitType}
+                  onChange={(e) => setParamVisitType(e.target.value)}
+                  placeholder="e.g. ANC checkup"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              {/* Visit Date */}
+              <div className="space-y-1">
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Visit Date</label>
+                <input
+                  type="date"
+                  value={paramVisitDate}
+                  onChange={(e) => setParamVisitDate(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              {/* Next Due Date */}
+              <div className="space-y-1">
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Next Due Date (Auto)</label>
+                <input
+                  type="text"
+                  readOnly
+                  value={paramNextDueDate}
+                  className="w-full px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs text-slate-500 focus:outline-none font-semibold"
+                />
+              </div>
+            </div>
+          </div>
           <div className="space-y-2">
             <label className="block text-sm font-semibold text-slate-700">
               {t.tellAsha}
@@ -435,14 +604,28 @@ export const AddNote: React.FC<AddNoteProps> = ({ onSuccess, onCancel, language 
             </span>
             <div className="grid grid-cols-2 gap-3">
               {/* Verification Photo Input */}
-              <div className="relative border-2 border-dashed border-slate-200 hover:border-emerald-500/50 bg-slate-50/50 hover:bg-emerald-50/10 rounded-2xl p-3 flex flex-col items-center justify-center text-center transition-all cursor-pointer min-h-[110px] overflow-hidden">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => handleImageUpload(e, 'verification')}
-                  className="absolute inset-0 opacity-0 cursor-pointer z-10"
-                />
-                {verificationImage ? (
+              <div className="relative border-2 border-dashed border-slate-200 hover:border-emerald-500/50 bg-slate-50/50 hover:bg-emerald-50/10 rounded-2xl p-3 flex flex-col items-center justify-center text-center transition-all min-h-[110px] overflow-hidden">
+                {cameraActive === 'verification' ? (
+                  <div className="absolute inset-0 z-30 bg-black flex flex-col justify-between">
+                    <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover absolute inset-0" />
+                    <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-2 z-40">
+                      <button
+                        type="button"
+                        onClick={() => captureSnapshot('verification')}
+                        className="px-2.5 py-1 bg-emerald-600 text-white rounded-xl text-[9px] font-bold shadow-md hover:bg-emerald-700 active:scale-95 transition-all"
+                      >
+                        Capture
+                      </button>
+                      <button
+                        type="button"
+                        onClick={stopCamera}
+                        className="px-2.5 py-1 bg-rose-500 text-white rounded-xl text-[9px] font-bold shadow-md hover:bg-rose-600 active:scale-95 transition-all"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : verificationImage ? (
                   <div className="absolute inset-0 z-20 bg-white">
                     <img src={verificationImage} alt="Verification" className="w-full h-full object-cover" />
                     <button
@@ -457,25 +640,61 @@ export const AddNote: React.FC<AddNoteProps> = ({ onSuccess, onCancel, language 
                     </button>
                   </div>
                 ) : (
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
                     <div className="p-2 bg-emerald-50 rounded-xl text-emerald-600 w-fit mx-auto">
                       <Camera className="w-5 h-5" />
                     </div>
                     <span className="block text-[10px] font-bold text-slate-700">{t.verificationPhoto}</span>
-                    <span className="block text-[8px] text-slate-400">{t.photoUploadDesc}</span>
+                    <div className="flex gap-1.5 justify-center z-20">
+                      <button
+                        type="button"
+                        onClick={() => startCamera('verification')}
+                        className="px-2.5 py-1 bg-emerald-600 text-white rounded-xl text-[9px] font-bold hover:bg-emerald-700 transition-colors active:scale-95 shadow-sm"
+                      >
+                        Camera
+                      </button>
+                      <div className="relative">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleImageUpload(e, 'verification')}
+                          className="absolute inset-0 opacity-0 cursor-pointer w-full"
+                        />
+                        <button
+                          type="button"
+                          className="px-2.5 py-1 bg-slate-100 text-slate-700 border border-slate-200/50 rounded-xl text-[9px] font-bold hover:bg-slate-200 transition-colors active:scale-95 shadow-sm"
+                        >
+                          Upload
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
 
               {/* Symptom Photo Input */}
-              <div className="relative border-2 border-dashed border-slate-200 hover:border-emerald-500/50 bg-slate-50/50 hover:bg-emerald-50/10 rounded-2xl p-3 flex flex-col items-center justify-center text-center transition-all cursor-pointer min-h-[110px] overflow-hidden">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => handleImageUpload(e, 'symptom')}
-                  className="absolute inset-0 opacity-0 cursor-pointer z-10"
-                />
-                {symptomImage ? (
+              <div className="relative border-2 border-dashed border-slate-200 hover:border-emerald-500/50 bg-slate-50/50 hover:bg-emerald-50/10 rounded-2xl p-3 flex flex-col items-center justify-center text-center transition-all min-h-[110px] overflow-hidden">
+                {cameraActive === 'symptom' ? (
+                  <div className="absolute inset-0 z-30 bg-black flex flex-col justify-between">
+                    <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover absolute inset-0" />
+                    <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-2 z-40">
+                      <button
+                        type="button"
+                        onClick={() => captureSnapshot('symptom')}
+                        className="px-2.5 py-1 bg-emerald-600 text-white rounded-xl text-[9px] font-bold shadow-md hover:bg-emerald-700 active:scale-95 transition-all"
+                      >
+                        Capture
+                      </button>
+                      <button
+                        type="button"
+                        onClick={stopCamera}
+                        className="px-2.5 py-1 bg-rose-500 text-white rounded-xl text-[9px] font-bold shadow-md hover:bg-rose-600 active:scale-95 transition-all"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : symptomImage ? (
                   <div className="absolute inset-0 z-20 bg-white">
                     <img src={symptomImage} alt="Symptom" className="w-full h-full object-cover" />
                     <button
@@ -490,12 +709,34 @@ export const AddNote: React.FC<AddNoteProps> = ({ onSuccess, onCancel, language 
                     </button>
                   </div>
                 ) : (
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
                     <div className="p-2 bg-sky-50 rounded-xl text-sky-600 w-fit mx-auto">
                       <ImagePlus className="w-5 h-5" />
                     </div>
                     <span className="block text-[10px] font-bold text-slate-700">{t.symptomPhoto}</span>
-                    <span className="block text-[8px] text-slate-400">{t.photoUploadDesc}</span>
+                    <div className="flex gap-1.5 justify-center z-20">
+                      <button
+                        type="button"
+                        onClick={() => startCamera('symptom')}
+                        className="px-2.5 py-1 bg-emerald-600 text-white rounded-xl text-[9px] font-bold hover:bg-emerald-700 transition-colors active:scale-95 shadow-sm"
+                      >
+                        Camera
+                      </button>
+                      <div className="relative">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleImageUpload(e, 'symptom')}
+                          className="absolute inset-0 opacity-0 cursor-pointer w-full"
+                        />
+                        <button
+                          type="button"
+                          className="px-2.5 py-1 bg-slate-100 text-slate-700 border border-slate-200/50 rounded-xl text-[9px] font-bold hover:bg-slate-200 transition-colors active:scale-95 shadow-sm"
+                        >
+                          Upload
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
