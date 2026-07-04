@@ -39,6 +39,41 @@ export async function extractVisitNote(
   const promptText = `System Prompt: ${SYSTEM_PROMPT}\n\nASHA Worker's Note: "${noteText}"`;
 
   try {
+    if (apiKey.startsWith('gsk_')) {
+      const url = 'https://api.groq.com/openai/v1/chat/completions';
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [
+            {
+              role: 'user',
+              content: promptText,
+            },
+          ],
+          response_format: { type: 'json_object' },
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Groq LLM API error: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const text = data.choices?.[0]?.message?.content;
+      if (!text) throw new Error('No content returned from Groq LLM API');
+
+      const parsed = JSON.parse(cleanJsonResponse(text));
+      return {
+        ...parsed,
+        confidence: 0.92,
+      };
+    }
+
     if (provider === 'gemini') {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
       const response = await fetch(url, {
