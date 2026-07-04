@@ -234,7 +234,11 @@ export const AddNote: React.FC<AddNoteProps> = ({ onSuccess, onCancel, language 
 
         setIsTranscribing(true);
         try {
-          const groqKey = localStorage.getItem('asha_groq_api_key') || localStorage.getItem('asha_llm_api_key');
+          const groqKey = localStorage.getItem('asha_groq_api_key') || 
+                          localStorage.getItem('asha_llm_api_key') || 
+                          (import.meta.env.VITE_GROQ_API_KEY as string) || 
+                          (import.meta.env.VITE_LLM_API_KEY as string) || 
+                          '';
           const transcription = await transcribeAudio(audioBlob, groqKey);
           setNoteText(transcription);
         } catch (err) {
@@ -289,7 +293,9 @@ export const AddNote: React.FC<AddNoteProps> = ({ onSuccess, onCancel, language 
     setShowFollowUp(false);
     setFollowUpAnswer('');
 
-    const apiKey = localStorage.getItem('asha_llm_api_key');
+    const apiKey = localStorage.getItem('asha_llm_api_key') || 
+                   (import.meta.env.VITE_LLM_API_KEY as string) || 
+                   '';
     const provider = (localStorage.getItem('asha_llm_provider') as 'local' | 'openai' | 'gemini') || 'local';
 
     // Extract fields via LLM or Local Smart Parser
