@@ -3,6 +3,7 @@ import { MapPin, Users, HeartPulse, Map as MapIcon, ArrowLeft } from 'lucide-rea
 import { supabase } from '../utils/supabaseClient';
 import { TRANSLATIONS } from '../utils/translations';
 import type { Language } from '../utils/translations';
+import { getStoredPatients } from '../utils/mockData';
 import type { Patient } from '../types';
 
 interface MapViewProps {
@@ -37,11 +38,20 @@ export const MapView: React.FC<MapViewProps> = ({ language }) => {
   const fetchPatients = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('patients')
-        .select('*');
-      if (error) throw error;
-      if (data) setPatients(data);
+      let localPatients = getStoredPatients();
+      setPatients(localPatients);
+
+      try {
+        const { data, error } = await supabase
+          .from('patients')
+          .select('*');
+        if (!error && data && data.length > 0) {
+          setPatients(data);
+          localStorage.setItem('asha_patients', JSON.stringify(data));
+        }
+      } catch (e) {
+        console.log("Supabase fetch failed, relying on local dataset:", e);
+      }
     } catch (err) {
       console.error('Error fetching patients for map:', err);
     } finally {

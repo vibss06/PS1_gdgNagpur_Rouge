@@ -4,6 +4,7 @@ import { supabase } from '../utils/supabaseClient';
 import { calculateRiskScore } from '../utils/rules';
 import { TRANSLATIONS } from '../utils/translations';
 import type { Language } from '../utils/translations';
+import { getStoredPatients, getStoredVisits } from '../utils/mockData';
 import type { Patient, Visit, RiskResult } from '../types';
 
 interface HomeProps {
@@ -31,21 +32,25 @@ export const Home: React.FC<HomeProps> = ({ onAddNoteClick, language }) => {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      // 1. Fetch patients
-      const { data: patientsData, error: patientsError } = await supabase
-        .from('patients')
-        .select('*');
-      if (patientsError) throw patientsError;
+      // 1. Load local data first
+      let patients: Patient[] = getStoredPatients();
+      let visits: Visit[] = getStoredVisits();
 
-      // 2. Fetch visits
-      const { data: visitsData, error: visitsError } = await supabase
-        .from('visits')
-        .select('*')
-        .order('visit_date', { ascending: false });
-      if (visitsError) throw visitsError;
-
-      const patients: Patient[] = patientsData || [];
-      const visits: Visit[] = visitsData || [];
+      // 2. Try to sync with Supabase
+      try {
+        const { data: patientsData } = await supabase.from('patients').select('*');
+        const { data: visitsData } = await supabase.from('visits').select('*').order('visit_date', { ascending: false });
+        if (patientsData && patientsData.length > 0) {
+          patients = patientsData;
+          localStorage.setItem('asha_patients', JSON.stringify(patientsData));
+        }
+        if (visitsData && visitsData.length > 0) {
+          visits = visitsData;
+          localStorage.setItem('asha_visits', JSON.stringify(visitsData));
+        }
+      } catch (e) {
+        console.log("Supabase fetch failed, relying on local dataset:", e);
+      }
 
       // 3. Map patients to their latest visit and calculate risk
       const risks: PatientRiskInfo[] = patients.map(p => {

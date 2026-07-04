@@ -3,6 +3,7 @@ import { Search, Calendar, MapPin, Clock, FileText, ChevronLeft, ArrowRight, Act
 import { supabase } from '../utils/supabaseClient';
 import { TRANSLATIONS } from '../utils/translations';
 import type { Language } from '../utils/translations';
+import { getStoredPatients, getStoredVisits } from '../utils/mockData';
 import type { Patient, Visit } from '../types';
 
 interface PatientListProps {
@@ -25,13 +26,24 @@ export const PatientList: React.FC<PatientListProps> = ({ language }) => {
   const fetchPatients = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('patients')
-        .select('*')
-        .order('name', { ascending: true });
+      let localPatients = getStoredPatients();
+      // Sort local patients by name ascending
+      localPatients.sort((a, b) => a.name.localeCompare(b.name));
+      setPatients(localPatients);
 
-      if (error) throw error;
-      setPatients(data || []);
+      try {
+        const { data, error } = await supabase
+          .from('patients')
+          .select('*')
+          .order('name', { ascending: true });
+
+        if (!error && data && data.length > 0) {
+          setPatients(data);
+          localStorage.setItem('asha_patients', JSON.stringify(data));
+        }
+      } catch (e) {
+        console.log("Supabase fetch patients failed, using local storage:", e);
+      }
     } catch (err) {
       console.error('Error fetching patients:', err);
     } finally {
@@ -43,14 +55,25 @@ export const PatientList: React.FC<PatientListProps> = ({ language }) => {
     setSelectedPatient(patient);
     setVisitsLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('visits')
-        .select('*')
-        .eq('patient_id', patient.id)
-        .order('visit_date', { ascending: false });
+      const allLocalVisits = getStoredVisits();
+      const localPatientVisits = allLocalVisits
+        .filter(v => v.patient_id === patient.id)
+        .sort((a, b) => new Date(b.visit_date).getTime() - new Date(a.visit_date).getTime());
+      setPatientVisits(localPatientVisits);
 
-      if (error) throw error;
-      setPatientVisits(data || []);
+      try {
+        const { data, error } = await supabase
+          .from('visits')
+          .select('*')
+          .eq('patient_id', patient.id)
+          .order('visit_date', { ascending: false });
+
+        if (!error && data && data.length > 0) {
+          setPatientVisits(data);
+        }
+      } catch (e) {
+        console.log("Supabase fetch patient visits failed, using local storage:", e);
+      }
     } catch (err) {
       console.error('Error fetching patient visits:', err);
     } finally {

@@ -5,7 +5,8 @@ import { extractVisitNote } from '../utils/llmService';
 import { transcribeAudio } from '../utils/transcribeService';
 import { TRANSLATIONS } from '../utils/translations';
 import type { Language } from '../utils/translations';
-import type { Patient, ExtractedNote } from '../types';
+import { getStoredPatients, saveStoredPatient, saveStoredVisit } from '../utils/mockData';
+import type { Patient, ExtractedNote, Visit } from '../types';
 
 interface AddNoteProps {
   onSuccess: () => void;
@@ -193,9 +194,18 @@ export const AddNote: React.FC<AddNoteProps> = ({ onSuccess, onCancel, language 
 
   const fetchPatients = async () => {
     try {
-      const { data, error } = await supabase.from('patients').select('*');
-      if (error) throw error;
-      setPatients(data || []);
+      const localPatients = getStoredPatients();
+      setPatients(localPatients);
+
+      try {
+        const { data, error } = await supabase.from('patients').select('*');
+        if (!error && data && data.length > 0) {
+          setPatients(data);
+          localStorage.setItem('asha_patients', JSON.stringify(data));
+        }
+      } catch (e) {
+        console.log("Supabase fetch failed, relying on local dataset:", e);
+      }
     } catch (err) {
       console.error('Error fetching patients:', err);
     }
@@ -330,55 +340,86 @@ export const AddNote: React.FC<AddNoteProps> = ({ onSuccess, onCancel, language 
     setIsLoading(true);
     try {
       let patientId = '';
-      
-      // 1. Match/Create Patient
       const matchName = paramName.trim() || 'Unknown Patient';
       const existing = patients.find(p => p.name.toLowerCase() === matchName.toLowerCase());
       
       if (existing) {
         patientId = existing.id;
       } else {
-        // Create new patient
-        const { data, error } = await supabase
-          .from('patients')
-          .insert([
-            {
-              name: matchName,
-              locality: 'General Ward', // fallback
-              condition_type: paramCondition,
-            }
-          ])
-          .select();
-
-        if (error) throw error;
-        if (data && data[0]) {
-          patientId = data[0].id;
-        }
+        // Create new patient locally
+        patientId = 'p_' + Date.now();
+        const newPatient: Patient = {
+          id: patientId,
+          name: matchName,
+          locality: 'General Ward',
+          condition_type: paramCondition,
+          created_at: new Date().toISOString()
+        };
+        saveStoredPatient(newPatient);
       }
 
-      // 2. Insert visit
-      const { error: visitError } = await supabase
-        .from('visits')
-        .insert([
-          {
-            patient_id: patientId,
-            visit_date: paramVisitDate,
-            visit_type: paramVisitType,
-            notes: noteText,
-            extracted_fields: {
-              weeks_pregnant: paramGestationWeeks || null,
-              gestation_weeks: paramGestationWeeks || null,
-              condition: paramCondition,
-              verification_image: verificationImage,
-              symptom_image: symptomImage,
-            },
-            confidence: extractedData?.confidence || 0.90,
-            next_due_date: paramNextDueDate,
-            danger_flag: extractedData?.danger_flag || false,
-          }
-        ]);
+      // Create new visit locally
+      const newVisit: Visit = {
+        id: 'v_' + Date.now(),
+        patient_id: patientId,
+        visit_date: paramVisitDate,
+        visit_type: paramVisitType,
+        notes: noteText,
+        extracted_fields: {
+          weeks_pregnant: paramGestationWeeks || undefined,
+          gestation_weeks: paramGestationWeeks || undefined,
+          condition: paramCondition,
+          verification_image: verificationImage,
+          symptom_image: symptomImage,
+        },
+        confidence: extractedData?.confidence || 0.90,
+        next_due_date: paramNextDueDate,
+        danger_flag: extractedData?.danger_flag || false,
+      };
+      saveStoredVisit(newVisit);
 
-      if (visitError) throw visitError;
+      // 3. Try to sync to Supabase (cloud backup)
+      try {
+        // Find if patient exists in Supabase, otherwise insert
+        const { data: supabasePatientData } = await supabase
+          .from('patients')
+          .select('id')
+          .eq('name', matchName);
+        
+        let supabasePatientId = supabasePatientData?.[0]?.id;
+        if (!supabasePatientId) {
+          const { data: newSubPatient } = await supabase
+            .from('patients')
+            .insert([{ name: matchName, locality: 'General Ward', condition_type: paramCondition }])
+            .select();
+          supabasePatientId = newSubPatient?.[0]?.id;
+        }
+
+        if (supabasePatientId) {
+          await supabase
+            .from('visits')
+            .insert([
+              {
+                patient_id: supabasePatientId,
+                visit_date: paramVisitDate,
+                visit_type: paramVisitType,
+                notes: noteText,
+                extracted_fields: {
+                  weeks_pregnant: paramGestationWeeks || undefined,
+                  gestation_weeks: paramGestationWeeks || undefined,
+                  condition: paramCondition,
+                  verification_image: verificationImage,
+                  symptom_image: symptomImage,
+                },
+                confidence: extractedData?.confidence || 0.90,
+                next_due_date: paramNextDueDate,
+                danger_flag: extractedData?.danger_flag || false,
+              }
+            ]);
+        }
+      } catch (supabaseErr) {
+        console.log("Supabase sync failed (offline or connection issues), record saved locally:", supabaseErr);
+      }
 
       // Show success states
       setIsLoading(false);
