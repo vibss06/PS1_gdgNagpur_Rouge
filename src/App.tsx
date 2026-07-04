@@ -1,14 +1,19 @@
 import { useState } from 'react';
-import { HeartPulse, Users, PlusCircle, Settings, ClipboardList } from 'lucide-react';
+import { HeartPulse, Users, PlusCircle, Settings, ClipboardList, Map } from 'lucide-react';
 import Home from './components/Home';
 import PatientList from './components/PatientList';
 import AddNote from './components/AddNote';
+import MapView from './components/MapView';
 import SettingsModal from './components/SettingsModal';
+import Login from './components/Login';
 import { TRANSLATIONS } from './utils/translations';
 import type { Language } from './utils/translations';
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'today' | 'patients' | 'add_note'>('today');
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return sessionStorage.getItem('asha_authenticated') === 'true';
+  });
+  const [activeTab, setActiveTab] = useState<'today' | 'patients' | 'add_note' | 'map'>('today');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [language, setLanguage] = useState<Language>(() => {
     return (localStorage.getItem('asha_language') as Language) || 'en';
@@ -21,6 +26,10 @@ function App() {
   };
 
   const t = TRANSLATIONS[language];
+
+  if (!isAuthenticated) {
+    return <Login language={language} onSuccess={() => setIsAuthenticated(true)} />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
@@ -72,6 +81,9 @@ function App() {
           {activeTab === 'patients' && (
             <PatientList language={language} />
           )}
+          {activeTab === 'map' && (
+            <MapView language={language} />
+          )}
           {activeTab === 'add_note' && (
             <AddNote 
               onSuccess={() => setActiveTab('today')}
@@ -82,7 +94,7 @@ function App() {
         </main>
 
         {/* Bottom Navigation Bar */}
-        <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-slate-100 px-6 py-3 flex items-center justify-around z-40 shadow-[0_-4px_20px_-4px_rgba(0,0,0,0.04)]">
+        <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-slate-100 px-4 py-3 flex items-center justify-around z-40 shadow-[0_-4px_20px_-4px_rgba(0,0,0,0.04)]">
           <button
             onClick={() => setActiveTab('today')}
             className={`flex flex-col items-center gap-1 transition-all ${
@@ -93,6 +105,18 @@ function App() {
           >
             <ClipboardList className="w-5.5 h-5.5" />
             <span className="text-[10px]">{t.today}</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('map')}
+            className={`flex flex-col items-center gap-1 transition-all ${
+              activeTab === 'map' 
+                ? 'text-emerald-600 scale-105 font-semibold' 
+                : 'text-slate-400 hover:text-slate-600'
+            }`}
+          >
+            <Map className="w-5.5 h-5.5" />
+            <span className="text-[10px]">{t.mapTab}</span>
           </button>
 
           <button

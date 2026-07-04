@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Sparkles, Check, Loader2, AlertCircle, Calendar, User, Info, Smartphone } from 'lucide-react';
+import { Mic, MicOff, Sparkles, Check, Loader2, AlertCircle, Calendar, User, Info, Smartphone, Camera, ImagePlus, X } from 'lucide-react';
 import { supabase } from '../utils/supabaseClient';
 import { extractVisitNote } from '../utils/llmService';
 import { transcribeAudio } from '../utils/transcribeService';
@@ -33,6 +33,26 @@ export const AddNote: React.FC<AddNoteProps> = ({ onSuccess, onCancel, language 
   // Follow-up question state
   const [showFollowUp, setShowFollowUp] = useState(false);
   const [followUpAnswer, setFollowUpAnswer] = useState('');
+
+  // Image Upload states
+  const [verificationImage, setVerificationImage] = useState<string | null>(null);
+  const [symptomImage, setSymptomImage] = useState<string | null>(null);
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'verification' | 'symptom') => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result as string;
+        if (type === 'verification') {
+          setVerificationImage(base64String);
+        } else {
+          setSymptomImage(base64String);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
   
   const [patients, setPatients] = useState<Patient[]>([]);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -220,6 +240,8 @@ export const AddNote: React.FC<AddNoteProps> = ({ onSuccess, onCancel, language 
             extracted_fields: {
               weeks_pregnant: extractedData.weeks_pregnant,
               condition: extractedData.condition,
+              verification_image: verificationImage,
+              symptom_image: symptomImage,
             },
             confidence: extractedData.confidence || 0.90,
             next_due_date: extractedData.next_due_date,
@@ -406,6 +428,80 @@ export const AddNote: React.FC<AddNoteProps> = ({ onSuccess, onCancel, language 
             )}
           </div>
 
+          {/* Photo Verification and Symptom Recording Section */}
+          <div className="space-y-2 pt-2 border-t border-slate-100/80">
+            <span className="block text-xs font-semibold text-slate-700">
+              {language === 'en' ? 'Photos Verification & Symptoms (Optional)' : 'फोटो सत्यापन और लक्षण विवरण (वैकल्पिक)'}
+            </span>
+            <div className="grid grid-cols-2 gap-3">
+              {/* Verification Photo Input */}
+              <div className="relative border-2 border-dashed border-slate-200 hover:border-emerald-500/50 bg-slate-50/50 hover:bg-emerald-50/10 rounded-2xl p-3 flex flex-col items-center justify-center text-center transition-all cursor-pointer min-h-[110px] overflow-hidden">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => handleImageUpload(e, 'verification')}
+                  className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                />
+                {verificationImage ? (
+                  <div className="absolute inset-0 z-20 bg-white">
+                    <img src={verificationImage} alt="Verification" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setVerificationImage(null);
+                      }}
+                      className="absolute top-1.5 right-1.5 p-1 bg-rose-500 text-white rounded-full hover:bg-rose-600 transition-colors shadow-md z-30"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <div className="p-2 bg-emerald-50 rounded-xl text-emerald-600 w-fit mx-auto">
+                      <Camera className="w-5 h-5" />
+                    </div>
+                    <span className="block text-[10px] font-bold text-slate-700">{t.verificationPhoto}</span>
+                    <span className="block text-[8px] text-slate-400">{t.photoUploadDesc}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Symptom Photo Input */}
+              <div className="relative border-2 border-dashed border-slate-200 hover:border-emerald-500/50 bg-slate-50/50 hover:bg-emerald-50/10 rounded-2xl p-3 flex flex-col items-center justify-center text-center transition-all cursor-pointer min-h-[110px] overflow-hidden">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => handleImageUpload(e, 'symptom')}
+                  className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                />
+                {symptomImage ? (
+                  <div className="absolute inset-0 z-20 bg-white">
+                    <img src={symptomImage} alt="Symptom" className="w-full h-full object-cover" />
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSymptomImage(null);
+                      }}
+                      className="absolute top-1.5 right-1.5 p-1 bg-rose-500 text-white rounded-full hover:bg-rose-600 transition-colors shadow-md z-30"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <div className="p-2 bg-sky-50 rounded-xl text-sky-600 w-fit mx-auto">
+                      <ImagePlus className="w-5 h-5" />
+                    </div>
+                    <span className="block text-[10px] font-bold text-slate-700">{t.symptomPhoto}</span>
+                    <span className="block text-[8px] text-slate-400">{t.photoUploadDesc}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div className="flex items-center gap-2">
             {/* Real Mic button */}
             <button
@@ -563,6 +659,28 @@ export const AddNote: React.FC<AddNoteProps> = ({ onSuccess, onCancel, language 
                   </div>
                 </div>
               </div>
+
+              {/* Photo Verification & Symptom Preview in Summary */}
+              {(verificationImage || symptomImage) && (
+                <div className="grid grid-cols-2 gap-4 pt-1.5 border-t border-slate-50">
+                  {verificationImage && (
+                    <div className="space-y-1">
+                      <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">{t.photoVerificationTitle}</span>
+                      <div className="w-full h-24 rounded-2xl overflow-hidden border border-slate-200 shadow-inner relative group bg-slate-50">
+                        <img src={verificationImage} alt="Verification" className="w-full h-full object-cover" />
+                      </div>
+                    </div>
+                  )}
+                  {symptomImage && (
+                    <div className="space-y-1">
+                      <span className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">{t.photoSymptomTitle}</span>
+                      <div className="w-full h-24 rounded-2xl overflow-hidden border border-slate-200 shadow-inner relative group bg-slate-50">
+                        <img src={symptomImage} alt="Symptom" className="w-full h-full object-cover" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Original text block */}
               <div className="space-y-1.5 pt-1">
